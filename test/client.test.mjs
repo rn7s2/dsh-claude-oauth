@@ -235,7 +235,6 @@ function modelRow(overrides) {
     contextWindow: 1_000_000,
     maxTokens: 128_000,
     input: ['text', 'image'],
-    efforts: ['low', 'medium', 'high', 'max'],
     ...overrides,
   };
 }
@@ -257,7 +256,6 @@ function signedInStatus() {
           name: 'Claude Haiku 4.5',
           contextWindow: 200_000,
           maxTokens: 64_000,
-          efforts: [],
         }),
       ],
       lastRefreshedAt: Date.now() - 5 * 60_000,
@@ -375,13 +373,11 @@ test('signed-in fixture renders the account, the redacted proxy and refresh cont
   assert.ok(text.includes('Context'));
   assert.ok(text.includes('Max output'));
   assert.ok(text.includes('Input'));
-  assert.ok(text.includes('Efforts'));
   assert.ok(text.includes('Claude Sonnet 5'));
   assert.ok(text.includes('claude-sonnet-5'));
   assert.ok(text.includes('1M'));
   assert.ok(text.includes('128K'));
   assert.ok(text.includes('Text + Image'));
-  assert.ok(text.includes('Low · Medium · High · Max'));
   assert.ok(text.includes('Claude Haiku 4.5'));
   assert.ok(text.includes('200K'));
   assert.ok(text.includes('64K'));
