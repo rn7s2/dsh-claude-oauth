@@ -1,0 +1,6 @@
+# This bundle adds one Host plugin: Claude OAuth sign-in plus a provider route
+# that registers Claude models with the Harness LLM seam. Its settings page is
+# served by the Client half of the same package.
+- insert:
+    - id: claude-oauth
+      name: 'dsh-claude-oauth'
