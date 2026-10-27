@@ -83,7 +83,12 @@ to `https://api.anthropic.com/v1/messages` with:
   `x-claude-code-session-id` from the Harness session;
 - Claude Code's identity system block followed by the
   `x-anthropic-billing-header: …` attribution line and the Harness system
-  prompt;
+  prompt — with the Harness's own fixed opener
+  `You are an AI agent powered by DeepSeek Harness.` suppressed for this route
+  only (stored sessions and other providers are unchanged);
+- tool declarations in Claude Code's canonical casing (`Read`, `Bash`,
+  `TodoWrite`, …), with streamed tool calls mapped back to the exact declared
+  Harness names so execution is unaffected;
 - adaptive thinking (`thinking: {type: 'adaptive'}` +
   `output_config.effort`) for models that support it.
 
@@ -124,6 +129,9 @@ owner-browser authentication; the handler additionally requires `POST`,
 - No background refresh: models change only after login or a manual refresh.
 - Older budget-thinking Claude models are advertised without a reasoning menu
   (the adapter only encodes adaptive thinking, rather than guessing budgets).
+- Only the fixed Harness identity opener is suppressed on this route; persona,
+  instructions, tool descriptions, and environment prompt sections are still
+  sent as the Harness composed them.
 - The settings page needs the Web GUI transport; a file:// shell has no
   same-origin `/api` fetch.
 
