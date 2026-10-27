@@ -379,7 +379,7 @@ test('buildMessagesRequest produces the complete Claude Code request body', asyn
 				content: [
 					{ type: 'text', text: 'Sure.' },
 					{ type: 'reasoning', text: 'internal reasoning' },
-					{ type: 'tool-call', id: 'toolu_1', name: 'Read', arguments: '{"file_path":"/tmp/x.txt"}' },
+					{ type: 'tool-call', id: 'toolu_1', name: 'Read', arguments: '{"file_path":"/project/x.txt"}' },
 					{ type: 'tool-call', id: 'toolu_2', name: 'Read', arguments: 'not json at all' },
 				],
 			},
@@ -452,7 +452,7 @@ test('buildMessagesRequest produces the complete Claude Code request body', asyn
 				content: [
 					{ type: 'text', text: 'Sure.' },
 					{ type: 'thinking', thinking: 'internal reasoning', signature: 'sig-abc' },
-					{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: '/tmp/x.txt' } },
+					{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: '/project/x.txt' } },
 					{ type: 'tool_use', id: 'toolu_2', name: 'Read', input: {} },
 				],
 			},
@@ -1125,7 +1125,7 @@ test('streams tool_use with partial JSON into one block-end tool-call block', as
 	const events = [
 		messageStart('msg_tool', 'claude-sonnet-5', { input_tokens: 30, output_tokens: 1 }),
 		{ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_01', name: 'Read', input: {} } },
-		{ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"file_path":"/tmp/' } },
+		{ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"file_path":"/project/' } },
 		{ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: 'a.txt"}' } },
 		{ type: 'content_block_stop', index: 0 },
 		messageDelta('tool_use', { output_tokens: 8 }),
@@ -1140,12 +1140,12 @@ test('streams tool_use with partial JSON into one block-end tool-call block', as
 		assert.deepEqual(chunks, [
 			{ type: 'block-start', index: 0, blockType: 'tool-call' },
 			{ type: 'tool-call-delta', index: 0, id: 'toolu_01', name: 'Read', argumentsDelta: '' },
-			{ type: 'tool-call-delta', index: 0, id: 'toolu_01', name: 'Read', argumentsDelta: '{"file_path":"/tmp/' },
+			{ type: 'tool-call-delta', index: 0, id: 'toolu_01', name: 'Read', argumentsDelta: '{"file_path":"/project/' },
 			{ type: 'tool-call-delta', index: 0, id: 'toolu_01', name: 'Read', argumentsDelta: 'a.txt"}' },
 			{
 				type: 'block-end',
 				index: 0,
-				block: { type: 'tool-call', id: 'toolu_01', name: 'Read', arguments: '{"file_path":"/tmp/a.txt"}' },
+				block: { type: 'tool-call', id: 'toolu_01', name: 'Read', arguments: '{"file_path":"/project/a.txt"}' },
 			},
 			{ type: 'usage', usage: { inputTokens: 30, outputTokens: 8, totalTokens: 38 } },
 			{

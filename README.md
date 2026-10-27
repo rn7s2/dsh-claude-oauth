@@ -2,9 +2,9 @@
 
 A self-contained DeepSeek Harness plugin that signs in with a **Claude account**
 (Claude Pro/Max OAuth) and registers **Claude models** as a Harness provider
-route. It is the Harness port of the Evo lisp extension
-`020-claude-oauth-provider.lisp`, with the OAuth flow hardened and the request
-shape brought closer to Claude Code.
+route. It is the Harness port of the
+[Evo lisp extension `020-claude-oauth-provider.lisp`](https://github.com/rn7s2/evo-agent/blob/main/extensions/020-claude-oauth-provider.lisp), with the OAuth
+flow hardened and the request shape brought closer to Claude Code.
 
 There is no settings form to fill in and no background traffic. The only UI is
 one small section in **Settings → Claude**:
@@ -31,7 +31,7 @@ one small section in **Settings → Claude**:
 From a Harness session, install the bundle from this checkout:
 
 ```text
-plugin_manager(action: "install_bundle", target: "/Users/bytedance/coding/dsh-claude-oauth", enabled: true)
+plugin_manager(action: "install_bundle", target: "/path/to/dsh-claude-oauth", enabled: true)
 ```
 
 The bundle patch inserts one Host row (`claude-oauth`). The plugin is live after
