@@ -214,9 +214,29 @@ function signedOutStatus() {
     expiresAt: null,
     refreshExpiresAt: null,
     login: { state: 'idle' },
-    models: { count: 0, lastRefreshedAt: null, lastSource: null, error: null, refreshing: false },
+    models: {
+      count: 0,
+      items: [],
+      lastRefreshedAt: null,
+      lastSource: null,
+      error: null,
+      refreshing: false,
+    },
     proxy: { direct: true, proxy: null, target: 'api.anthropic.com, platform.claude.com' },
     lastError: null,
+  };
+}
+
+/** One display row as the Host sends it. */
+function modelRow(overrides) {
+  return {
+    id: 'claude-sonnet-5',
+    name: 'Claude Sonnet 5',
+    contextWindow: 1_000_000,
+    maxTokens: 128_000,
+    input: ['text', 'image'],
+    efforts: ['low', 'medium', 'high', 'max'],
+    ...overrides,
   };
 }
 
@@ -229,7 +249,17 @@ function signedInStatus() {
     refreshExpiresAt: Date.now() + 86_400_000,
     login: { state: 'idle' },
     models: {
-      count: 6,
+      count: 2,
+      items: [
+        modelRow(),
+        modelRow({
+          id: 'claude-haiku-4-5',
+          name: 'Claude Haiku 4.5',
+          contextWindow: 200_000,
+          maxTokens: 64_000,
+          efforts: [],
+        }),
+      ],
       lastRefreshedAt: Date.now() - 5 * 60_000,
       lastSource: 'login',
       error: null,
@@ -333,12 +363,35 @@ test('signed-in fixture renders the account, the redacted proxy and refresh cont
   assert.ok(text.includes('claude@example.com'));
   assert.ok(text.includes('Plan: max'));
   assert.ok(!text.includes('Signed in'), 'signed-in rows show the identity instead of a bare label');
-  assert.ok(text.includes('6 models'));
+  assert.ok(text.includes('2 models'));
   assert.ok(text.includes('Last refreshed'));
   assert.ok(text.includes('Source: sign-in'));
   assert.ok(text.includes('Proxy: http://***@127.0.0.1:7890'));
   assert.ok(text.includes('Target hosts: api.anthropic.com, platform.claude.com'));
   assert.ok(!text.includes('user:pass'), 'proxy credentials must be redacted');
+
+  // The display-only model list renders every registered model with its
+  // identity, capacity, modalities and effort ladder.
+  assert.ok(text.includes('Context'));
+  assert.ok(text.includes('Max output'));
+  assert.ok(text.includes('Input'));
+  assert.ok(text.includes('Efforts'));
+  assert.ok(text.includes('Claude Sonnet 5'));
+  assert.ok(text.includes('claude-sonnet-5'));
+  assert.ok(text.includes('1M'));
+  assert.ok(text.includes('128K'));
+  assert.ok(text.includes('Text + Image'));
+  assert.ok(text.includes('Low · Medium · High · Max'));
+  assert.ok(text.includes('Claude Haiku 4.5'));
+  assert.ok(text.includes('200K'));
+  assert.ok(text.includes('64K'));
+  const lines = findAll(tree, (node) => typeof node.props?.className === 'string' && node.props.className.includes('dshc-oauth-model-line'));
+  assert.equal(lines.length, 2, 'one line per registered model');
+  const list = findAll(tree, (node) => typeof node.props?.className === 'string' && node.props.className === 'dshc-oauth-model-list')[0];
+  assert.ok(list, 'the model list container must exist');
+  assert.equal(list.props.role, 'table');
+  const header = findAll(list, (node) => typeof node.props?.className === 'string' && node.props.className === 'dshc-oauth-model-head');
+  assert.equal(header.length, 1, 'the list renders one sticky header row');
 
   const refresh = findButton(tree, 'Refresh models');
   assert.ok(refresh);
