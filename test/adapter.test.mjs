@@ -22,7 +22,9 @@ import {
 	CC_USER_AGENT,
 	CC_VERSION,
 	CLAUDE_CODE_IDENTITY,
+	CLAUDE_CODE_TOOL_NAMES,
 	DEFAULT_OUTPUT_TOKENS,
+	HARNESS_IDENTITY_LINE,
 	INFERENCE_BETAS,
 	MAX_OUTPUT_TOKENS,
 	MODEL_CAPABILITIES,
@@ -37,8 +39,11 @@ import {
 	billingSuffix,
 	buildMessagesRequest,
 	createClaudeAdapter,
+	fromClaudeToolName,
 	parseSseStream,
 	requestImageDimensions,
+	stripHarnessIdentityLine,
+	toClaudeToolName,
 } from '../lib/adapter.js';
 
 /* -------------------------------------------------------------------------- */
@@ -1458,6 +1463,129 @@ test('stream wire requests clamp max_tokens to the model output ceiling', async 
 			(error) => isPluginError(error, 'INVALID_REQUEST'),
 		);
 		assert.equal(server.requests[0].body.max_tokens, 64_000);
+	} finally {
+		await server.close();
+	}
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Route-scoped Claude Code identity and tool-name shaping                    */
+/* -------------------------------------------------------------------------- */
+
+test('the Harness identity opener is removed from the outgoing system prompt only', async () => {
+	assert.equal(stripHarnessIdentityLine(`${HARNESS_IDENTITY_LINE}\n\nPersona line`), 'Persona line');
+	assert.equal(stripHarnessIdentityLine(`${HARNESS_IDENTITY_LINE}\nPersona line`), 'Persona line');
+	assert.equal(
+		stripHarnessIdentityLine(`Prefix\n${HARNESS_IDENTITY_LINE}\nPersona line`),
+		'Prefix\nPersona line',
+	);
+	assert.equal(stripHarnessIdentityLine('Persona line'), 'Persona line');
+	assert.equal(
+		stripHarnessIdentityLine(`Note: ${HARNESS_IDENTITY_LINE}`),
+		`Note: ${HARNESS_IDENTITY_LINE}`,
+		'an inline mention is not a section and stays untouched',
+	);
+
+	const options = generateOptions({
+		system: `${HARNESS_IDENTITY_LINE}\n\nYou are a coding agent with tools.`,
+	});
+	const { body } = await buildMessagesRequest({ model: SONNET, options, accessToken: 't' });
+	assert.deepEqual(body.system, [
+		{ type: 'text', text: CLAUDE_CODE_IDENTITY },
+		{
+			type: 'text',
+			text: `${billingHeaderLine('Hello world from the test prompt.')}\n\nYou are a coding agent with tools.`,
+		},
+	]);
+	assert.ok(!JSON.stringify(body.system).includes(HARNESS_IDENTITY_LINE));
+
+	// A leading system-history message is sanitized through the same path.
+	const fromHistory = generateOptions();
+	fromHistory.messages = [
+		{ id: 's1', role: 'system', content: [{ type: 'text', text: `${HARNESS_IDENTITY_LINE}\n\nHistory persona` }] },
+		...fromHistory.messages,
+	];
+	const historyBody = (await buildMessagesRequest({ model: SONNET, options: fromHistory, accessToken: 't' })).body;
+	assert.ok(!JSON.stringify(historyBody.system).includes(HARNESS_IDENTITY_LINE));
+	assert.ok(JSON.stringify(historyBody.system).includes('History persona'));
+
+	// A prompt that is only the identity line leaves the billing line alone.
+	const onlyIdentity = (await buildMessagesRequest({
+		model: SONNET,
+		options: generateOptions({ system: HARNESS_IDENTITY_LINE }),
+		accessToken: 't',
+	})).body;
+	assert.deepEqual(onlyIdentity.system.at(-1), {
+		type: 'text',
+		text: billingHeaderLine('Hello world from the test prompt.'),
+	});
+});
+
+test('declared Harness tool names are sent in Claude Code canonical casing', async () => {
+	assert.equal(toClaudeToolName('bash'), 'Bash');
+	assert.equal(toClaudeToolName('READ'), 'Read');
+	assert.equal(toClaudeToolName('todo_write'), 'TodoWrite');
+	assert.equal(toClaudeToolName('web_fetch'), 'WebFetch');
+	assert.equal(toClaudeToolName('web_search'), 'WebSearch');
+	assert.equal(toClaudeToolName('ask_user_question'), 'AskUserQuestion');
+	assert.equal(toClaudeToolName('custom_tool'), 'custom_tool');
+	assert.equal(toClaudeToolName(''), '');
+	assert.deepEqual(CLAUDE_CODE_TOOL_NAMES.includes('Bash'), true);
+
+	const tools = [
+		{ name: 'bash', description: 'run a command', parameters: { type: 'object', properties: {}, required: [] } },
+		{ name: 'todo_write', description: 'track work', parameters: { type: 'object', properties: {}, required: [] } },
+		{ name: 'custom_tool', description: 'kept as-is', parameters: { type: 'object', properties: {}, required: [] } },
+	];
+	const options = generateOptions({
+		tools,
+		messages: [
+			{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'Hello world from the test prompt.' }] },
+			{
+				id: 'a1',
+				role: 'assistant',
+				content: [{ type: 'tool-call', id: 'call-1', name: 'bash', arguments: '{"command":"ls"}' }],
+				source: { kind: 'model', provider: PROVIDER_ID, model: 'claude-sonnet-5' },
+			},
+		],
+	});
+	const { body } = await buildMessagesRequest({ model: SONNET, options, accessToken: 't' });
+	assert.deepEqual(body.tools.map((tool) => tool.name), ['Bash', 'TodoWrite', 'custom_tool']);
+	assert.equal(body.messages[1].content[0].type, 'tool_use');
+	assert.equal(body.messages[1].content[0].name, 'Bash');
+});
+
+test('streamed Claude Code tool names map back to the declared Harness names', async () => {
+	const events = [
+		messageStart('msg_tool', 'claude-sonnet-5', { input_tokens: 10, output_tokens: 1 }),
+		{ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: {} } },
+		{ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"command":' } },
+		{ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '"ls"}' } },
+		{ type: 'content_block_stop', index: 0 },
+		messageDelta('tool_use', { output_tokens: 5 }),
+		messageStop(),
+	];
+	const server = await startFakeAnthropic((record, res) => {
+		writeSse(res, events);
+		res.end();
+	});
+	try {
+		const { chunks } = await streamChunks(server, {
+			tools: [
+				{ name: 'bash', description: 'run a command', parameters: { type: 'object', properties: {}, required: [] } },
+			],
+			messages: [
+				{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'Hello world from the test prompt.' }] },
+			],
+		});
+		const toolStart = chunks.find((chunk) => chunk.type === 'tool-call-delta');
+		assert.equal(toolStart.name, 'bash');
+		const toolEnd = chunks.find((chunk) => chunk.type === 'block-end');
+		assert.equal(toolEnd.block.name, 'bash');
+		assert.equal(toolEnd.block.id, 'toolu_1');
+		assert.equal(toolEnd.block.arguments, '{"command":"ls"}');
+		assert.deepEqual(chunks.at(-1).reason, { kind: 'tool-calls' });
 	} finally {
 		await server.close();
 	}

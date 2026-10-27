@@ -1,6 +1,6 @@
 {
   "name": "dsh-claude-oauth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Claude OAuth sign-in and Claude model registration for the DeepSeek Harness.",
   "license": "MIT",
