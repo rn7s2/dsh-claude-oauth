@@ -28,20 +28,25 @@ one small section in **Settings → Claude**:
 
 ## Install
 
-From a Harness session, install the bundle from this checkout:
+Install the published bundle into the Desktop profile:
 
-```text
-plugin_manager(action: "install_bundle", target: "/path/to/dsh-claude-oauth", enabled: true)
+```sh
+dsh plugin --profile desktop add github:rn7s2/dsh-claude-oauth
 ```
 
-The bundle patch inserts one Host row (`claude-oauth`). The plugin is live after
-installation when HMR is active; otherwise restart the Harness. The settings
-section appears after a page reload, and its display metadata itself is
-localized (`locale/en.json`, `locale/zh.json`).
+The command installs and selects the bundle, whose patch inserts one Host row
+(`claude-oauth`). With HMR the plugin is live immediately; otherwise restart
+the Harness. The settings section appears after a page reload, and its display
+metadata itself is localized (`locale/en.json`, `locale/zh.json`).
 
-To remove it, remove the bundle with `plugin_manager`. The private data
-directory is left in place; delete `~/.dsh/claude-oauth/` to forget the account
-by hand.
+## Uninstall
+
+```sh
+dsh plugin --profile desktop remove dsh-claude-oauth
+```
+
+The private data directory is left in place; delete `~/.dsh/claude-oauth/` to
+forget the account by hand.
 
 ## How it works
 

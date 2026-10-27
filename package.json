@@ -34,5 +34,13 @@
         "@deepseek-ai/dsh-client-locale"
       ]
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rn7s2/dsh-claude-oauth.git"
+  },
+  "homepage": "https://github.com/rn7s2/dsh-claude-oauth#readme",
+  "bugs": {
+    "url": "https://github.com/rn7s2/dsh-claude-oauth/issues"
   }
 }
