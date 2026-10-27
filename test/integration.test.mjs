@@ -146,6 +146,16 @@ test('a stored token makes status signed in and registers the fallback catalog',
   assert.equal(body.status.loggedIn, true);
   assert.equal(body.status.models.count, DEFAULT_CATALOG_IDS.length);
   assert.equal(body.status.models.lastSource, 'default');
+  const items = body.status.models.items;
+  assert.equal(items.length, DEFAULT_CATALOG_IDS.length);
+  const sonnet = items.find((model) => model.id === 'claude-sonnet-5');
+  assert.ok(sonnet, 'the fallback catalog must include claude-sonnet-5');
+  assert.equal(sonnet.name, 'Claude Sonnet 5');
+  assert.equal(sonnet.contextWindow, 1_000_000);
+  assert.equal(sonnet.maxTokens, 128_000);
+  assert.deepEqual(sonnet.input, ['text', 'image']);
+  assert.deepEqual(sonnet.efforts, ['low', 'medium', 'high', 'max']);
+  assert.ok(!('accessToken' in sonnet), 'model display rows must not expose secrets');
   const mode = (await stat(join(dataDir, 'token.json'))).mode & 0o777;
   assert.equal(mode, 0o600);
   const stored = JSON.parse(await readFile(join(dataDir, 'token.json'), 'utf8'));

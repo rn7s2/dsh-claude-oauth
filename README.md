@@ -14,7 +14,9 @@ one small section in **Settings → Claude**:
 - **Sign out** — deletes the local session; registered models disappear.
 - **Refresh models** — manually asks `GET /v1/models` and registers what the
   account can use. Disabled while signed out. An initial refresh runs once
-  right after a successful login; nothing refreshes in the background.
+  right after a successful login; nothing refreshes in the background. The
+  registered catalog is shown as a scrollable, display-only table (model id,
+  context window, max output, input types, and reasoning efforts).
 - **Network route** — shows the outbound proxy the Harness fetch dispatcher
   will actually use for `api.anthropic.com` / `platform.claude.com`, or a
   warning when the connection is direct.
