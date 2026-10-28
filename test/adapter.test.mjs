@@ -26,6 +26,7 @@ import {
 	DEFAULT_OUTPUT_TOKENS,
 	HARNESS_IDENTITY_LINE,
 	INFERENCE_BETAS,
+	CACHE_CONTROL,
 	MAX_OUTPUT_TOKENS,
 	MODEL_CAPABILITIES,
 	PROVIDER_ID,
@@ -328,7 +329,7 @@ test('system blocks always lead with the Claude Code identity and carry one bill
 	});
 	assert.deepEqual(body.system, [
 		{ type: 'text', text: CLAUDE_CODE_IDENTITY },
-		{ type: 'text', text: billingHeaderLine('Hello world from the test prompt.') },
+		{ type: 'text', text: billingHeaderLine('Hello world from the test prompt.'), cache_control: CACHE_CONTROL },
 	]);
 
 	// App text that already carries the billing pseudo-header is not duplicated.
@@ -338,7 +339,7 @@ test('system blocks always lead with the Claude Code identity and carry one bill
 		options: generateOptions({ system: custom }),
 		accessToken: 'sk-ant-oat01-system-test',
 	});
-	assert.deepEqual(withCustom.body.system[1], { type: 'text', text: custom });
+	assert.deepEqual(withCustom.body.system[1], { type: 'text', text: custom, cache_control: CACHE_CONTROL });
 	assert.equal(withCustom.body.system[1].text.split('x-anthropic-billing-header:').length - 1, 1);
 });
 
@@ -448,6 +449,7 @@ test('buildMessagesRequest produces the complete Claude Code request body', asyn
 			{
 				type: 'text',
 				text: `${billingHeaderLine('Hello world from the test prompt.')}\n\nAPP SYSTEM\n\nLEADING SYSTEM`,
+				cache_control: CACHE_CONTROL,
 			},
 		],
 		messages: [
@@ -483,6 +485,7 @@ test('buildMessagesRequest produces the complete Claude Code request body', asyn
 					{
 						type: 'text',
 						text: '[file attached: "notes.txt", 42 bytes; attachment sha256:222. Its contents are not included in this request; read it with a file tool when needed.]',
+						cache_control: CACHE_CONTROL,
 					},
 				],
 			},
@@ -496,6 +499,7 @@ test('buildMessagesRequest produces the complete Claude Code request body', asyn
 					properties: { file_path: { type: 'string' } },
 					required: ['file_path'],
 				},
+				cache_control: CACHE_CONTROL,
 			},
 		],
 		stop_sequences: ['END'],
@@ -520,6 +524,7 @@ test('tool mapping filters deferred declarations and supplies a neutral schema',
 			name: 'NoSchema',
 			description: 'no parameters',
 			input_schema: { type: 'object', properties: {}, required: [] },
+			cache_control: CACHE_CONTROL,
 		},
 	]);
 
@@ -657,6 +662,7 @@ test('user images are prepared through the attachment service and sent as base64
 			media_type: 'image/png',
 			data: Buffer.from([1, 2, 3, 4]).toString('base64'),
 		},
+		cache_control: CACHE_CONTROL,
 	});
 	assert.equal(calls.length, 1);
 	assert.equal(calls[0].attachment, attachment);
@@ -735,7 +741,7 @@ test('assistant images and projected tool updates in user content are dropped de
 	});
 	assert.deepEqual(body.messages, [
 		{ role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
-		{ role: 'user', content: [{ type: 'text', text: 'go' }] },
+		{ role: 'user', content: [{ type: 'text', text: 'go', cache_control: CACHE_CONTROL }] },
 	]);
 });
 
@@ -986,7 +992,7 @@ test('streams a text turn into the DSH chunk protocol and sends Claude Code head
 		assert.deepEqual(request.body.output_config, { effort: 'medium' });
 		assert.deepEqual(request.body.system, [
 			{ type: 'text', text: CLAUDE_CODE_IDENTITY },
-			{ type: 'text', text: billingHeaderLine('Hello world from the test prompt.') },
+			{ type: 'text', text: billingHeaderLine('Hello world from the test prompt.'), cache_control: CACHE_CONTROL },
 		]);
 	} finally {
 		await server.close();
@@ -1496,6 +1502,7 @@ test('the Harness identity opener is removed from the outgoing system prompt onl
 		{
 			type: 'text',
 			text: `${billingHeaderLine('Hello world from the test prompt.')}\n\nYou are a coding agent with tools.`,
+			cache_control: CACHE_CONTROL,
 		},
 	]);
 	assert.ok(!JSON.stringify(body.system).includes(HARNESS_IDENTITY_LINE));
@@ -1519,6 +1526,7 @@ test('the Harness identity opener is removed from the outgoing system prompt onl
 	assert.deepEqual(onlyIdentity.system.at(-1), {
 		type: 'text',
 		text: billingHeaderLine('Hello world from the test prompt.'),
+		cache_control: CACHE_CONTROL,
 	});
 });
 
@@ -1589,4 +1597,107 @@ test('streamed Claude Code tool names map back to the declared Harness names', a
 	} finally {
 		await server.close();
 	}
+});
+
+/* -------------------------------------------------------------------------- */
+/* Prompt caching                                                             */
+/* -------------------------------------------------------------------------- */
+
+test('stable prefixes and history carry one-hour cache breakpoints', async () => {
+	const tools = [
+		{ name: 'bash', description: 'run a command', parameters: { type: 'object', properties: {}, required: [] } },
+		{ name: 'read', description: 'read a file', parameters: { type: 'object', properties: {}, required: [] } },
+	];
+	const options = generateOptions({
+		tools,
+		messages: [
+			{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'Hello world from the test prompt.' }] },
+			{
+				id: 'a1',
+				role: 'assistant',
+				source: { kind: 'model', provider: PROVIDER_ID, model: 'claude-sonnet-5' },
+				content: [{ type: 'text', text: 'first answer' }],
+			},
+			{ id: 'u2', role: 'user', content: [{ type: 'text', text: 'continue' }] },
+		],
+	});
+	const { body } = await buildMessagesRequest({ model: SONNET, options, accessToken: 't' });
+
+	// The last system block carries the breakpoint and therefore caches the
+	// identity block too; the identity block itself needs no marker.
+	assert.equal('cache_control' in body.system[0], false);
+	assert.deepEqual(body.system[1].cache_control, CACHE_CONTROL);
+	// Last tool declaration carries the breakpoint, and only it.
+	const toolMarkers = body.tools.map((tool) => tool.cache_control);
+	assert.equal(toolMarkers[0], undefined);
+	assert.deepEqual(toolMarkers.at(-1), CACHE_CONTROL);
+	// The conversation breakpoint is short TTL and sits on the final user block.
+	const lastUser = body.messages.at(-1);
+	assert.equal(lastUser.role, 'user');
+	assert.deepEqual(lastUser.content.at(-1).cache_control, CACHE_CONTROL);
+
+	// Exactly three markers: one system, one tool, one history. Four is the
+	// hard API limit, so the redundant identity marker is deliberately absent.
+	const markers = JSON.stringify(body).match(/"cache_control":/g) ?? [];
+	assert.equal(markers.length, 3);
+	// Every breakpoint uses the documented one-hour TTL (no beta header needed).
+	const ttls = JSON.stringify(body).match(/"ttl":"1h"/g) ?? [];
+	assert.equal(ttls.length, 3);
+});
+
+test('a continued turn reuses the identical cached prefix', async () => {
+	const tools = [
+		{ name: 'bash', description: 'run a command', parameters: { type: 'object', properties: {}, required: [] } },
+	];
+	const history = [
+		{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'Hello world from the test prompt.' }] },
+		{
+			id: 'a1',
+			role: 'assistant',
+			source: { kind: 'model', provider: PROVIDER_ID, model: 'claude-sonnet-5' },
+			content: [{ type: 'text', text: 'first answer' }],
+		},
+	];
+	const first = await buildMessagesRequest({ model: SONNET, options: generateOptions({ tools, messages: history }), accessToken: 't' });
+
+	const continued = await buildMessagesRequest({
+		model: SONNET,
+		options: generateOptions({
+			tools,
+			messages: [
+				...history,
+				{ id: 't1', role: 'tool', toolCallId: 'call-1', content: [{ type: 'text', text: 'done' }] },
+				{ id: 'u2', role: 'user', content: [{ type: 'text', text: 'continue' }] },
+			],
+		}),
+		accessToken: 't',
+	});
+
+	// Content must be byte-identical apart from the moving cache breakpoint,
+	// which always sits on the last message: that identity is what lets the
+	// provider serve cache reads instead of re-billing the prefix.
+	const stripCache = (value) => {
+		if (Array.isArray(value)) return value.map(stripCache);
+		if (value && typeof value === 'object') {
+			return Object.fromEntries(
+				Object.entries(value)
+					.filter(([key]) => key !== 'cache_control')
+					.map(([key, entry]) => [key, stripCache(entry)]),
+			);
+		}
+		return value;
+	};
+	assert.deepEqual(stripCache(continued.body.system), stripCache(first.body.system));
+	assert.deepEqual(stripCache(continued.body.tools), stripCache(first.body.tools));
+	assert.deepEqual(stripCache(continued.body.messages[0]), stripCache(first.body.messages[0]));
+	assert.deepEqual(stripCache(continued.body.messages[1]), stripCache(first.body.messages[1]));
+	// The long-TTL system/tool breakpoints never move.
+	assert.deepEqual(continued.body.system[0].cache_control, first.body.system[0].cache_control);
+	assert.deepEqual(continued.body.tools.at(-1).cache_control, first.body.tools.at(-1).cache_control);
+	// Turn 1 ended on an assistant turn (no eligible user/system message), so
+	// the breakpoint sat on its earlier user block; in turn 2 it moves to the
+	// new final user block and disappears from the now-cached prefix.
+	assert.equal(first.body.messages[0].content[0].cache_control.type, 'ephemeral');
+	assert.equal('cache_control' in continued.body.messages[0].content[0], false);
+	assert.deepEqual(continued.body.messages.at(-1).content.at(-1).cache_control, CACHE_CONTROL);
 });
