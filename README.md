@@ -90,7 +90,21 @@ to `https://api.anthropic.com/v1/messages` with:
   `TodoWrite`, …), with streamed tool calls mapped back to the exact declared
   Harness names so execution is unaffected;
 - adaptive thinking (`thinking: {type: 'adaptive'}` +
-  `output_config.effort`) for models that support it.
+  `output_config.effort`) for models that support it;
+- explicit prompt-caching breakpoints so repeated prefixes are billed at
+  Anthropic's cache rates instead of full input price.
+
+Prompt caching is prefix-based and opt-in. The request carries three
+`cache_control` markers — the last system block (which caches the Claude Code
+identity block before it), the last tool declaration, and the final block of
+the conversation prefix — all with the extended one-hour ephemeral TTL
+(`{"type": "ephemeral", "ttl": "1h"}`). The one-hour TTL is documented for the
+Claude API without a beta header and is the right choice for thinking-heavy,
+multistep work: a cache entry lives from the start of its writing request, so a
+single long thinking turn could otherwise expire a five-minute entry before
+the next step. The identity block, billing line, system prompt, and tool list
+are emitted in the same byte order on every turn, so continued conversations
+hit the cache; three markers stay below the API's four-breakpoint limit.
 
 Assistant thinking signatures are kept in the Harness replay envelope and
 replayed, so multi-turn tool use keeps reasoning continuity.
