@@ -1701,3 +1701,89 @@ test('a continued turn reuses the identical cached prefix', async () => {
 	assert.equal('cache_control' in continued.body.messages[0].content[0], false);
 	assert.deepEqual(continued.body.messages.at(-1).content.at(-1).cache_control, CACHE_CONTROL);
 });
+
+test('image turns cache correctly: marker on the image, deterministic bytes', async () => {
+	const { service } = fakeImageService();
+	const attachment = {
+		attachmentId: 'sha256:photo',
+		mediaType: 'image/jpeg',
+		width: 64,
+		height: 64,
+		bytes: 10,
+		name: 'photo.jpg',
+	};
+	const options = generateOptions({
+		messages: [
+			{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'look at this' }, { type: 'image', attachment }] },
+		],
+	});
+	const first = await buildMessagesRequest({ model: SONNET, options, accessToken: 't', attachments: service });
+	const second = await buildMessagesRequest({ model: SONNET, options, accessToken: 't', attachments: service });
+	const blocks = first.body.messages[0].content;
+	const image = blocks.at(-1);
+	// The breakpoint is legal on an image block (Messages API ImageBlockParam
+	// carries cache_control) and it caches the text preceding it too.
+	assert.equal(image.type, 'image');
+	assert.deepEqual(image.cache_control, CACHE_CONTROL);
+	assert.equal(blocks[0].cache_control, undefined);
+	// Cache hits require byte-identical prompts, so two builds of the same turn
+	// must produce exactly the same image bytes and markers.
+	assert.deepEqual(second.body, first.body);
+});
+
+test('tool-result images cache on the tool_result block, not inner content', async () => {
+	const { service } = fakeImageService();
+	const attachment = {
+		attachmentId: 'sha256:shot',
+		mediaType: 'image/png',
+		width: 8,
+		height: 8,
+		bytes: 4,
+	};
+	const { body } = await buildMessagesRequest({
+		model: SONNET,
+		options: generateOptions({
+			messages: [
+				{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'run' }] },
+				{
+					id: 'a1',
+					role: 'assistant',
+					source: { kind: 'model', provider: PROVIDER_ID, model: 'claude-sonnet-5' },
+					content: [{ type: 'tool-call', id: 'call-1', name: 'Read', arguments: '{}' }],
+				},
+				{
+					id: 't1',
+					role: 'tool',
+					toolCallId: 'call-1',
+					content: [
+						{ type: 'text', text: 'screenshot' },
+						{ type: 'image', attachment },
+					],
+				},
+			],
+		}),
+		accessToken: 't',
+		attachments: service,
+	});
+	const toolResult = body.messages.at(-1).content.at(-1);
+	assert.equal(toolResult.type, 'tool_result');
+	assert.deepEqual(toolResult.cache_control, CACHE_CONTROL);
+	// The inner image is content, not a breakpoint of its own.
+	assert.equal(toolResult.content[1].cache_control, undefined);
+});
+
+test('an offloaded image caches as the text placeholder it becomes', async () => {
+	const attachment = { attachmentId: 'sha256:gone', mediaType: 'image/png', width: 4, height: 4, bytes: 4 };
+	const { body } = await buildMessagesRequest({
+		model: SONNET,
+		options: generateOptions({
+			messages: [{ id: 'u1', role: 'user', content: [{ type: 'image', offloaded: true, attachment }] }],
+		}),
+		accessToken: 't',
+		attachments: fakeImageService().service,
+	});
+	const block = body.messages[0].content[0];
+	assert.equal(block.type, 'text');
+	assert.match(block.text, /offloaded/);
+	assert.deepEqual(block.cache_control, CACHE_CONTROL);
+});
