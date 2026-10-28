@@ -105,6 +105,12 @@ single long thinking turn could otherwise expire a five-minute entry before
 the next step. The identity block, billing line, system prompt, and tool list
 are emitted in the same byte order on every turn, so continued conversations
 hit the cache; three markers stay below the API's four-breakpoint limit.
+Images are cacheable too: the breakpoint may sit on an image block or on a
+`tool_result` that contains one, and the adapter re-encodes each attachment
+deterministically so repeated turns hash identically. Anthropic invalidates
+the message cache when images are added to or removed from a prompt, so the
+first turn that introduces an image rewrites that entry; durable image
+offload, if the harness applies it, costs one such invalidation as well.
 
 Assistant thinking signatures are kept in the Harness replay envelope and
 replayed, so multi-turn tool use keeps reasoning continuity.
